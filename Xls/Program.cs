@@ -12,8 +12,17 @@ namespace Xls
         {
             var data = new ConfigurationBuilder()
                 .AddJsonFile("C:\\Users\\lucas\\source\\repos\\Xls\\Xls\\appsettings.json", true, true).Build();
-            foreach (string i in GetRowValues(data["filePath"]!, data["bookName"]!, data["row"]!))
-                Console.WriteLine(i);
+            Dictionary<string, List<string>> values = GetRowValues(data["filePath"]!, data["bookName"]!, data, data["row"]!.Split(','));
+            foreach(KeyValuePair<string, List<string>> pair in values)
+            {
+                Console.WriteLine();
+                Console.WriteLine(pair.Key);
+                foreach(string s in pair.Value)
+                {
+                    Console.WriteLine(s);
+                }
+                Console.WriteLine();
+            }
         }
 
         static Sheets? GetAllWorkSheets(string fileName)
@@ -28,9 +37,9 @@ namespace Xls
             return theSheets;
         }
 
-        static List<string> GetRowValues(string fileName, string sheetName, string rowName)
+        static Dictionary<string, List<string>> GetRowValues(string fileName, string sheetName, IConfiguration data ,params string[] rowNames)
         {
-            List<string>? values = null;
+            Dictionary<string, List<string>> dicValues = new Dictionary<string, List<string>>();
 
             using (SpreadsheetDocument document = SpreadsheetDocument.Open(fileName, false))
             {
@@ -41,68 +50,75 @@ namespace Xls
                 {
                     throw new ArgumentException("Spreadsheet not found, check file path");
                 }
-
-                WorksheetPart? wsPart = (WorksheetPart)wbPart!.GetPartById(theSheet.Id!);
-                Row? theRow = wsPart.Worksheet?.Descendants<Row>()?.Where(r => r.RowIndex == rowName).FirstOrDefault();
-
-                List<Cell>? theCells = theRow?.Descendants<Cell>().Where(c => c.CellReference!.ToString()!.Contains(rowName)).ToList();
-                List<string> theValues = new List<string>();
-                foreach (Cell c in theCells!)
+                for (int i = 0; i < rowNames.Length; i++)
                 {
-                    string value = c.InnerText;
-                    if (c.DataType?.Value == null)
-                    {
-                        int styleIndex = (int)c.StyleIndex!.Value;
-                        CellFormat cellFormat = (CellFormat)wbPart.WorkbookStylesPart!.Stylesheet.CellFormats!.ElementAt(styleIndex);
-                        uint formatId = cellFormat.NumberFormatId!.Value;
+                    WorksheetPart? wsPart = (WorksheetPart)wbPart!.GetPartById(theSheet.Id!);
+                    Row? theRow = wsPart.Worksheet?.Descendants<Row>()?.Where(r => r.RowIndex == rowNames[i]).FirstOrDefault();
 
-                        if (formatId == (uint)DataTypes.DateShort || formatId == (uint)DataTypes.DateLong)
+                    List<Cell>? theCells = theRow?.Descendants<Cell>().Where(c => c.CellReference!.ToString()!.Contains(rowNames[i])).ToList();
+                    List<string> theValues = new();
+                    foreach (Cell c in theCells!)
+                    {
+                        string value = c.InnerText;
+                        if (c.DataType?.Value == null)
                         {
-                            double oaDate;
-                            if (double.TryParse(c.InnerText, out oaDate))
+                            if (c.StyleIndex != null)
                             {
-                                theValues.Add(DateTime.FromOADate(oaDate).ToShortDateString());
+                                int styleIndex = (int)c.StyleIndex!.Value;
+                                CellFormat cellFormat = (CellFormat)wbPart.WorkbookStylesPart!.Stylesheet.CellFormats!.ElementAt(styleIndex);
+                                uint formatId = cellFormat.NumberFormatId!.Value;
+
+                                if (formatId == (uint)DataTypes.DateShort || formatId == (uint)DataTypes.DateLong)
+                                {
+                                    if (double.TryParse(c.InnerText, out double oaDate))
+                                    {
+                                        theValues.Add(DateTime.FromOADate(oaDate).ToShortDateString());
+                                    }
+                                }
+                                else if (formatId == (uint)DataTypes.Percentage)
+                                {
+                                    theValues.Add(Math.Round(double.Parse(c.InnerText), 4, MidpointRounding.AwayFromZero) * 100 + "%");
+                                }
+                                else if (formatId == (uint)DataTypes.Currency)
+                                {
+                                    theValues.Add("£" + double.Parse(c.InnerText));
+                                }
+                                else
+                                {
+                                    theValues.Add(c.InnerText);
+                                }
+                            }
+                            else if(data["showBlankCells"] == "true")
+                            {
+                                theValues.Add("Blank Cell");
                             }
                         }
-                        else if (formatId == (uint)DataTypes.Percentage)
+                        else if (c.DataType?.Value == CellValues.SharedString)
                         {
-                            theValues.Add(Math.Round(double.Parse(c.InnerText), 4, MidpointRounding.AwayFromZero) * 100 + "%");
+                            var stringTable = wbPart.GetPartsOfType<SharedStringTablePart>().FirstOrDefault();
+                            if (stringTable is not null)
+                            {
+                                value = stringTable.SharedStringTable.ElementAt(int.Parse(value)).InnerText;
+                                theValues.Add(value);
+                            }
                         }
-                        else if (formatId == (uint)DataTypes.Currency)
+                        else if (c.DataType?.Value == CellValues.Boolean)
                         {
-                            theValues.Add("£" + double.Parse(c.InnerText));
-                        }
-                        else
-                        {
-                            theValues.Add(c.InnerText);
-                        }
-                    }
-                    else if (c.DataType?.Value == CellValues.SharedString)
-                    {
-                        var stringTable = wbPart.GetPartsOfType<SharedStringTablePart>().FirstOrDefault();
-                        if (stringTable is not null)
-                        {
-                            value = stringTable.SharedStringTable.ElementAt(int.Parse(value)).InnerText;
-                            theValues.Add(value);
-                        }
-                    }
-                    else if (c.DataType?.Value == CellValues.Boolean)
-                    {
-                        switch (value)
-                        {
-                            case "0":
-                                theValues.Add("FALSE");
-                                break;
-                            default:
-                                theValues.Add("TRUE");
-                                break;
+                            switch (value)
+                            {
+                                case "0":
+                                    theValues.Add("FALSE");
+                                    break;
+                                default:
+                                    theValues.Add("TRUE");
+                                    break;
+                            }
                         }
                     }
+                    dicValues.Add($"Row {rowNames[i]}:", theValues);
                 }
-                values = theValues;
             }
-
-            return values;
+            return dicValues;
         }
     }
 }
