@@ -12,7 +12,7 @@ namespace Xls
         {
             var data = new ConfigurationBuilder()
                 .AddJsonFile("C:\\Users\\lucas\\source\\repos\\Xls\\Xls\\appsettings.json", true, true).Build();
-            Dictionary<string, List<string>> values = GetRowValues(data["filePath"]!, data["bookName"]!, data, data["row"]!.Split(','));
+            Dictionary<string, List<string>> values = GetRowValues(data["filePath"]!, data["bookName"]!, data, data["row"]!.Replace(" ", string.Empty).Split(','));
             foreach(KeyValuePair<string, List<string>> pair in values)
             {
                 Console.WriteLine();
@@ -57,7 +57,7 @@ namespace Xls
 
                     List<Cell>? theCells = theRow?.Descendants<Cell>().Where(c => c.CellReference!.ToString()!.Contains(rowNames[i])).ToList();
                     List<string> theValues = new();
-                    foreach (Cell c in theCells!)
+                    foreach (Cell c in theCells)
                     {
                         string value = c.InnerText;
                         if (c.DataType?.Value == null)
@@ -72,25 +72,21 @@ namespace Xls
                                 {
                                     if (double.TryParse(c.InnerText, out double oaDate))
                                     {
-                                        theValues.Add(DateTime.FromOADate(oaDate).ToShortDateString());
+                                        theValues.Add(c.CellReference + " " + DateTime.FromOADate(oaDate).ToShortDateString());
                                     }
                                 }
                                 else if (formatId == (uint)DataTypes.Percentage)
                                 {
-                                    theValues.Add(Math.Round(double.Parse(c.InnerText), 4, MidpointRounding.AwayFromZero) * 100 + "%");
+                                    theValues.Add(c.CellReference + " " + Math.Round(double.Parse(c.InnerText), 4, MidpointRounding.AwayFromZero) * 100 + "%");
                                 }
                                 else if (formatId == (uint)DataTypes.Currency)
                                 {
-                                    theValues.Add("£" + double.Parse(c.InnerText));
+                                    theValues.Add(c.CellReference + " " + "£" + double.Parse(c.InnerText));
                                 }
                                 else
                                 {
-                                    theValues.Add(c.InnerText);
+                                    theValues.Add(c.CellReference + " " + c.InnerText);
                                 }
-                            }
-                            else if(data["showBlankCells"] == "true")
-                            {
-                                theValues.Add("Blank Cell");
                             }
                         }
                         else if (c.DataType?.Value == CellValues.SharedString)
@@ -99,7 +95,7 @@ namespace Xls
                             if (stringTable is not null)
                             {
                                 value = stringTable.SharedStringTable.ElementAt(int.Parse(value)).InnerText;
-                                theValues.Add(value);
+                                theValues.Add(c.CellReference + " " + value);
                             }
                         }
                         else if (c.DataType?.Value == CellValues.Boolean)
@@ -107,10 +103,10 @@ namespace Xls
                             switch (value)
                             {
                                 case "0":
-                                    theValues.Add("FALSE");
+                                    theValues.Add(c.CellReference + " " + "FALSE");
                                     break;
                                 default:
-                                    theValues.Add("TRUE");
+                                    theValues.Add(c.CellReference + " " + "TRUE");
                                     break;
                             }
                         }
